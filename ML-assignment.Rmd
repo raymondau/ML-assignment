@@ -1,0 +1,131 @@
+Qualitative Activity Recognition of Weight Lifting Exercises
+============================================================
+
+Synopsis
+--------
+Modern devises allow us to collect a large amount of data about personal activity relatively inexpensively. This project uses data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants to predict whether they are performing barbell lifts correctly or incorrectly in 5 different ways. 
+
+Using the Random Forest algorithm, a model was created using 70% of the data for training and 30% for validation. The model produces a high out of sample accuracy of 99% when tested on the validation data set. 
+
+
+Data Loading and Processing
+---------------------------
+
+The [training data set] (https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv) and the [test data set] (https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv) are downloaded from the course website.
+
+We read both data sets.
+
+```{r readData, cache=TRUE}
+pmlTrain <- read.csv("pml-training.csv",na.strings=c("NA",""))
+pmlTest <- read.csv("pml-testing.csv",na.strings=c("NA",""))
+
+dim(pmlTrain)
+dim(pmlTest)
+```
+
+Load the relevant libraries.
+
+```{r}
+library(caret)
+library(randomForest)
+```
+
+Discard non-predictor columns -- x, all timestamps, user-name, new-window, num-window.
+
+```{r}
+rmCols <- grep("X|user_name|window|timestamp",names(pmlTrain))
+pmlTrainSub <- pmlTrain[,-rmCols]
+dim(pmlTrainSub)
+```
+
+Calculate proportion of NAs (nulls) for each column. 
+
+```{r}
+nRows <- nrow(pmlTrainSub)
+NAcols <- apply(pmlTrainSub, 2, FUN= function(x) sum(is.na(x))/nRows)
+```
+
+Discard columns with high NAs (>= 50%).
+
+```{r}
+pmlTrainSub <- pmlTrainSub[,-which(NAcols >= 0.5)]
+dim(pmlTrainSub)
+```
+
+We had trimmed the number of predictor columns to 52 (53 if including the class variable). The columns are:
+
+```{r}
+names(pmlTrainSub)
+```
+
+
+
+Train the Model
+---------------
+
+Create training set using 70% and validation set at 30% from training data to train the model.
+
+```{r}
+pmlTrainIndex <- createDataPartition(y = pmlTrainSub$classe, p=0.7,list=FALSE) 
+pmlTrainData <- pmlTrainSub[pmlTrainIndex,]
+pmlValData <- pmlTrainSub[-pmlTrainIndex,]
+
+dim(pmlTrainData)
+dim(pmlValData)
+```
+
+Fit a model using Random Forest. To minimize running time, we set the parameters to run using the "CV" method with 4 folds and also set the function to run in parallel mode. Run-time is approximately 8min.
+
+```{r randomForest, cache=TRUE}
+set.seed(13579)
+modFit <- train(classe ~., data = pmlTrainData, method="rf", 
+                trControl = trainControl(method = "cv", number = 4),
+                allowParallel=T)
+```
+
+```{r}
+modFit
+```
+
+Cross validate the prediction function using the validation data set to compute the relevant accuracy measures. 
+
+```{r}
+pred <- predict(modFit, newdata=pmlValData)
+confusionMatrix(pred,pmlValData$classe)
+```
+
+The above results show that the out of sample accuracy is very high at **99%**, meaning that the expected out of sample error is **1%**.
+
+
+Testing on New Data
+-------------------
+
+We now apply the model to the unseen test data to predict each record's class. 
+
+```{r}
+predTest <- predict(modFit, newdata=pmlTest)
+```
+
+The predictions are:
+
+```{r}
+predTest
+```
+
+Create a function to write each prediction into one file for submission to Coursera's Project Submission.
+
+```{r}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+```
+
+We now submit the prediction vector to the function to create the 20 out files in the working directory.
+
+```{r}
+pml_write_files(predTest)
+```
